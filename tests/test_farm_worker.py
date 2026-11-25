@@ -103,8 +103,11 @@ def world(monkeypatch):
     instances.hooks.clear()
 
 
-def worker(n, hub, world, target=None, wait_restart=None, mode="bluestacks"):
+def worker(n, hub, world, target=None, wait_restart=None, mode="bluestacks", hours=None):
     config = Config()
+    if hours is not None:
+        config.schedule.enabled = True
+        config.schedule.active_hours = hours
     config.device.mode = mode
     config.device.bluestacks_instance = target or f'instance-{n}'
     config.device.launch_emulator = True
