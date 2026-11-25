@@ -7414,6 +7414,9 @@ class FarmbotWindow(FluentWindow):
                     require_adb(install)
                 if emulator_identity(device_cfg):
                     raise instances.FarmHeld("An unowned player appeared before startup")
+                acquire()  # startup preparation may have crossed the hours boundary
+                if emulator_identity(device_cfg):
+                    raise instances.FarmHeld("An unowned player appeared while waiting for active hours")
                 checkpoint()
                 pid = launch(install, instance)
                 owned = (pid,)
@@ -7434,10 +7437,25 @@ class FarmbotWindow(FluentWindow):
                 else:
                     raise instances.FarmHeld(farms.held[self.farm])
             key = instances.instance_key(device_cfg) if farms.limit else claims.instance_name(device_cfg)
-            if not farms.acquire(self.farm, key, stop_event, self.pause_event,
-                                 lambda: self.events.put(("status", "Queued: waiting for an active instance slot")),
-                                 lambda: self.events.put(("status", "Paused by you: press Resume to carry on"))):
-                raise Stopped()
+            said_hours = False
+            while True:
+                schedule = self.config.schedule
+                if schedule.enabled and datetime.now().hour not in schedule.active_hours:
+                    farms.release(self.farm)  # no player has opened at this admission boundary
+                    instances.active.pop(self.farm, None)
+                    if not said_hours:
+                        self.events.put(("status", "Outside active hours: waiting to open the emulator"))
+                        said_hours = True
+                    if stop_event.wait(.1):
+                        raise Stopped()
+                    continue
+                if not farms.acquire(self.farm, key, stop_event, self.pause_event,
+                                     lambda: self.events.put(("status", "Queued: waiting for an active instance slot")),
+                                     lambda: self.events.put(("status", "Paused by you: press Resume to carry on"))):
+                    raise Stopped()
+                # A slot wait can finish after playing hours have ended.
+                if not schedule.enabled or datetime.now().hour in schedule.active_hours:
+                    break
             instances.active[self.farm] = device_cfg
 
         def connect():
