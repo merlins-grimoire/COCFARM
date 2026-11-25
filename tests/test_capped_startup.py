@@ -46,7 +46,10 @@ def real_startup(world, monkeypatch, *, never_ready=False, block_poll=False, on_
                 on_connect()
 
         def shell(self, *args):
-            return 'ok'
+            return '1' if args == ('getprop', 'sys.boot_completed') else 'ok'
+
+        def foreground_package(self):
+            return 'com.uncube.launcher3'
 
     def open_device(cfg, **kwargs):
         kwargs.pop('sleep', None)

@@ -564,10 +564,12 @@ def open_device(cfg: DeviceConfig, sleep: Callable[[float], None] = time.sleep,
             try:
                 device = make(inst.serial, adb)
                 device.connect()
-                device.shell("echo", "ok")
-                check()
-                log.info("Connected to %s at %s", inst.display_name, inst.serial)
-                return device
+                # ADB can answer before Android's package/activity services are ready.
+                if (device.shell("getprop", "sys.boot_completed").strip() == "1"
+                        and device.foreground_package()):
+                    check()
+                    log.info("Connected to %s at %s", inst.display_name, inst.serial)
+                    return device
             except DeviceError as exc:
                 last_error = exc
         check()
