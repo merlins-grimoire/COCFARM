@@ -7545,17 +7545,25 @@ class FarmbotWindow(FluentWindow):
                     owned = None
             return device
 
+        def finish_turn(bot) -> None:
+            close_owned()  # a held or unverified player must not report a completed handoff
+            bot.notifier.send("Account turn finished",
+                              f"Farm {self.farm} released its active slot for the queue. Session totals below.",
+                              kind="summary", attacks=bot.attacks, loot=bot.gained,
+                              fields=bot.session_fields())
+            log.info("Account turn finished: released the active slot for the queue")
+
         def round_over(bot) -> None:
             if (not stop_event.is_set() and not self.pause_event.is_set() and owned
                     and farms.should_yield(self.farm)):
                 self.events.put(("status", "Queued: giving the next farm a turn"))
-                close_owned()
+                finish_turn(bot)
                 resume(bot)
 
         def idle(bot, seconds: float) -> bool:
             if not farms.limit or not owned:
                 return False
-            close_owned()
+            finish_turn(bot)
             end = time.monotonic() + seconds
             said_pause = False
             while time.monotonic() < end or bot.pause_reason() or self.pause_event.is_set():

@@ -70,7 +70,13 @@ def world(monkeypatch):
         def __init__(self, game, config, **kwargs):
             self.game, self.config, self.callbacks = game, config, kwargs
             self.left_until, self.rounds = None, 0
+            self.attacks, self.gained = 3, None
+            self.posts = []
+            self.notifier = SimpleNamespace(send=lambda *args, **kwargs: self.posts.append(
+                (args, kwargs, set(resident))))
             bots.append(self)
+
+        def session_fields(self): return [("Upgrades", "2")]
 
         def _check_display(self): pass
         def ensure_game_running(self): pass
@@ -123,6 +129,48 @@ def worker(n, hub, world, target=None, wait_restart=None, mode="bluestacks", hou
     world.threads.append((stop, thread))
     thread.start()
     return window, stop, thread
+
+
+@pytest.mark.parametrize('boundary', ['rotation', 'idle'])
+def test_turn_notification_follows_verified_release_once(world, monkeypatch, boundary):
+    hub = SimpleNamespace(farm_queue=instances.FarmQueue(1))
+    monkeypatch.setattr(hub.farm_queue, 'should_yield', lambda n: True)
+    def run(bot):
+        if boundary == 'rotation':
+            bot.callbacks['on_round']()
+        else:
+            bot.callbacks['on_idle'](0)
+        bot.game.stop_event.set()
+    monkeypatch.setattr(world.Bot, 'run', run)
+    _, _, thread = worker(1, hub, world)
+    thread.join(3)
+    assert not thread.is_alive()
+    bot, = world.bots
+    assert len(bot.posts) == 1
+    args, kwargs, resident_at_send = bot.posts[0]
+    assert args[0] == 'Account turn finished'
+    assert 'Farm 1' in args[1]
+    assert not resident_at_send
+    assert kwargs['attacks'] == 3
+    assert kwargs['fields'] == [('Upgrades', '2')]
+
+
+@pytest.mark.parametrize('release', ['held', 'no_waiter', 'stopped'])
+def test_no_turn_notification_without_successful_handoff(world, monkeypatch, release):
+    hub = SimpleNamespace(farm_queue=instances.FarmQueue(1))
+    if release == 'held':
+        world.failure.add('instance-1')
+        monkeypatch.setattr(hub.farm_queue, 'should_yield', lambda n: True)
+    def run(bot):
+        if release == 'stopped':
+            bot.game.stop_event.set()
+        bot.callbacks['on_round']()
+        bot.game.stop_event.set()
+    monkeypatch.setattr(world.Bot, 'run', run)
+    _, _, thread = worker(1, hub, world)
+    thread.join(3)
+    assert not thread.is_alive()
+    assert all(not bot.posts for bot in world.bots)
 
 
 def test_worker_admission_rotates_without_replacing_bot(world):
