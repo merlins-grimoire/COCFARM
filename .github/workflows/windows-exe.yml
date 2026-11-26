@@ -35,7 +35,16 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e . pyinstaller
+      - run: pip install -e ".[dev]" pyinstaller
+      - name: Run regression checks
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          python -m pytest -o addopts=
+          tests/test_clan_castle.py tests/test_builder_ordinary.py
+          tests/test_capped_startup.py tests/test_emulator_exit.py
+          tests/test_farm_queue.py tests/test_farm_worker.py
+          tests/test_gui_queue.py tests/test_round_handoff.py
       - run: python packaging/build.py
       - name: Self-test the built exe
         shell: pwsh
